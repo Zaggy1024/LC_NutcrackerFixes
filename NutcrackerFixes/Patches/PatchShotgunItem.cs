@@ -212,13 +212,23 @@ namespace NutcrackerFixes.Patches
             // Where continueLabel refers to the label that continues at the `i++` of the for loop.
             // This will prevent the shotgun from skipping the rest of the hit enemies due to a failed
             // hit early in the loop.
-            var retInstruction = loopStart.End;
+            var instructionIndex = loopStart.End;
             while (true)
             {
-                retInstruction = instructionsAsList.FindIndex(retInstruction, loopEnd.Start - retInstruction, insn => insn.opcode == OpCodes.Ret);
-                if (retInstruction < 0)
+                instructionIndex = instructionsAsList.FindIndex(instructionIndex, loopEnd.Start - instructionIndex, insn => insn.opcode == OpCodes.Ret);
+                if (instructionIndex < 0)
                     break;
-                instructionsAsList[retInstruction] = new CodeInstruction(OpCodes.Br_S, continueLabel);
+                instructionsAsList[instructionIndex] = new CodeInstruction(OpCodes.Br_S, continueLabel);
+            }
+
+            // Find and turn logging in the hit registration loop into no-ops.
+            instructionIndex = loopStart.End;
+            while (true)
+            {
+                instructionIndex = instructionsAsList.FindIndex(instructionIndex, loopEnd.Start - instructionIndex, insn => insn.Calls(Common.m_Debug_Log));
+                if (instructionIndex < 0)
+                    break;
+                instructionsAsList[instructionIndex] = new CodeInstruction(OpCodes.Pop);
             }
 
             return instructionsAsList;
