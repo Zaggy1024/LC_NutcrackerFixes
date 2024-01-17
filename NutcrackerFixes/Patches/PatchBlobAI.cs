@@ -18,6 +18,8 @@ namespace NutcrackerFixes.Patches
 
         static readonly FieldInfo f_PlayerControllerB_gameplayCamera = typeof(PlayerControllerB).GetField(nameof(PlayerControllerB.gameplayCamera));
 
+        [HarmonyTranspiler]
+        [HarmonyPatch("HitEnemy")]
         static IEnumerable<CodeInstruction> DoHitEnemyTranspiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
             // Looking for the following line:
@@ -61,18 +63,6 @@ namespace NutcrackerFixes.Patches
             });
 
             return instructionsList;
-        }
-
-        [HarmonyTranspiler]
-        [HarmonyPatch("HitEnemy")]
-        static IEnumerable<CodeInstruction> HitEnemyTranspiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
-        {
-            foreach (var instruction in DoHitEnemyTranspiler(instructions, generator))
-            {
-                if (Plugin.DEBUG_TRANSPILERS)
-                    Plugin.Instance.Logger.LogInfo(instruction.ToString());
-                yield return instruction;
-            }
         }
     }
 }

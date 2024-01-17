@@ -16,6 +16,8 @@ namespace NutcrackerFixes.Patches
         static readonly MethodInfo m_NetworkBehavior_get_IsOwner = typeof(NetworkBehaviour).GetMethod("get_IsOwner");
         static readonly MethodInfo m_SandSpiderAI_TriggerChaseWithPlayer = typeof(SandSpiderAI).GetMethod(nameof(SandSpiderAI.TriggerChaseWithPlayer));
 
+        [HarmonyTranspiler]
+        [HarmonyPatch("HitEnemy")]
         static IEnumerable<CodeInstruction> DoHitEnemyTranspiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
             var instructionsList = instructions.ToList();
@@ -38,18 +40,6 @@ namespace NutcrackerFixes.Patches
             });
 
             return instructionsList;
-        }
-
-        [HarmonyTranspiler]
-        [HarmonyPatch("HitEnemy")]
-        static IEnumerable<CodeInstruction> HitEnemyTranspiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
-        {
-            foreach (var instruction in DoHitEnemyTranspiler(instructions, generator))
-            {
-                if (Plugin.DEBUG_TRANSPILERS)
-                    Plugin.Instance.Logger.LogInfo(instruction.ToString());
-                yield return instruction;
-            }
         }
     }
 }
