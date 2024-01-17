@@ -4,8 +4,8 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 
-using GameNetcodeStuff;
 using HarmonyLib;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace NutcrackerFixes.Patches
@@ -13,7 +13,11 @@ namespace NutcrackerFixes.Patches
     [HarmonyPatch(typeof(ShotgunItem))]
     internal class PatchShotgunItem
     {
+        static readonly MethodInfo m_PatchShotgunItem_SetSafetyServerRpc = typeof(PatchShotgunItem).GetMethod(nameof(SetSafetyServerRpc), new Type[] { typeof(ShotgunItem), typeof(bool) });
+
         static readonly FieldInfo f_ShotgunItem_enemyColliders = AccessTools.Field(typeof(ShotgunItem), "enemyColliders");
+        static readonly FieldInfo f_ShotgunItem_safetyOn = typeof(ShotgunItem).GetField(nameof(ShotgunItem.safetyOn));
+        static readonly MethodInfo m_ShotgunItem_SetSafetyControlTip = AccessTools.Method(typeof(ShotgunItem), "SetSafetyControlTip", new Type[0]);
 
         static readonly MethodInfo m_Physics_SphereCastNonAlloc = AccessTools.Method(typeof(Physics), "SphereCastNonAlloc", new Type[] { typeof(Ray), typeof(float), typeof(RaycastHit[]), typeof(float), typeof(int), typeof(QueryTriggerInteraction) });
 
@@ -244,6 +248,213 @@ namespace NutcrackerFixes.Patches
                     Plugin.Instance.Logger.LogInfo(instruction.ToString());
                 yield return instruction;
             }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(nameof(ShotgunItem.EquipItem))]
+        static void EquipItemPostfix(ShotgunItem __instance)
+        {
+            if (!Plugin.Shotgun_SynchronizeShellsAndSafety.Value)
+                return;
+            SynchronizeServerRpc(__instance);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(nameof(ShotgunItem.LoadItemSaveData))]
+        static void LoadItemSaveDataPostfix(ShotgunItem __instance)
+        {
+            if (!Plugin.Shotgun_SynchronizeShellsAndSafety.Value)
+                return;
+            SetSafetyServerRpc(__instance, __instance.safetyOn);
+        }
+
+        [HarmonyTranspiler]
+        [HarmonyPatch(nameof(GrabbableObject.ItemInteractLeftRight))]
+        static IEnumerable<CodeInstruction> ItemInteractLeftRightTranspiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
+        {
+            var instructionsList = instructions.ToList();
+
+            var checkIsLeftInteract = instructionsList.FindIndexOfSequence(new Predicate<CodeInstruction>[]
+            {
+                insn => insn.IsLdarg(1),
+                insn => insn.opcode == OpCodes.Brtrue || insn.opcode == OpCodes.Brtrue_S,
+            });
+            var isLeftInteractEndLabel = (Label)instructionsList[checkIsLeftInteract.End - 1].operand;
+            var isLeftInteractEnd = instructionsList.FindIndex(insn => insn.labels.Contains(isLeftInteractEndLabel));
+
+            var isOwnerLabel = generator.DefineLabel();
+            instructionsList[checkIsLeftInteract.End].labels.Add(isOwnerLabel);
+            var skipIfNotOwnerInstructions = new CodeInstruction[]
+            {
+                new CodeInstruction(OpCodes.Ldarg_0),
+                new CodeInstruction(OpCodes.Call, Reflection.m_NetworkBehaviour_get_IsOwner),
+                new CodeInstruction(OpCodes.Brtrue_S, isOwnerLabel),
+                new CodeInstruction(OpCodes.Ret),
+            };
+            instructionsList.InsertRange(checkIsLeftInteract.End, skipIfNotOwnerInstructions);
+
+            var setSafetyOnServerInstructions = new CodeInstruction[]
+            {
+                new CodeInstruction(OpCodes.Ldarg_0),
+                new CodeInstruction(OpCodes.Ldarg_0),
+                new CodeInstruction(OpCodes.Ldfld, f_ShotgunItem_safetyOn),
+                new CodeInstruction(OpCodes.Call, m_PatchShotgunItem_SetSafetyServerRpc),
+            };
+            instructionsList.InsertRange(isLeftInteractEnd - 1 + skipIfNotOwnerInstructions.Length, setSafetyOnServerInstructions);
+
+            return instructionsList;
+        }
+
+        const uint SET_SAFETY_SERVER_RPC = 391;
+        const uint SET_SAFETY_CLIENT_RPC = 392;
+
+        public static void SetSafetyServerRpc(ShotgunItem shotgun, bool safetyOn)
+        {
+            if (!shotgun.IsOwner && !shotgun.IsHost && !shotgun.IsServer)
+                return;
+
+            var networkManager = shotgun.NetworkManager;
+            if (networkManager is null || !networkManager.IsListening)
+                return;
+
+            if (shotgun.IsHost || shotgun.IsServer)
+            {
+                SetSafetyClientRpc(shotgun, safetyOn);
+                return;
+            }
+
+            if (shotgun.IsClient)
+            {
+                var rpcParams = default(ServerRpcParams);
+                var buffer = Reflection.BeginSendServerRPC(shotgun, SET_SAFETY_SERVER_RPC, rpcParams, RpcDelivery.Reliable);
+                buffer.WriteValueSafe(safetyOn);
+                Reflection.EndSendServerRPC(shotgun, ref buffer, SET_SAFETY_SERVER_RPC, rpcParams, RpcDelivery.Reliable);
+            }
+        }
+
+        public static void SetSafetyClientRpc(ShotgunItem shotgun, bool safetyOn)
+        {
+            if (!shotgun.IsOwner && !shotgun.IsHost && !shotgun.IsServer)
+                return;
+
+            var networkManager = shotgun.NetworkManager;
+            if (networkManager is null || !networkManager.IsListening)
+                return;
+
+            if (shotgun.IsHost || shotgun.IsServer)
+            {
+                var rpcParams = default(ClientRpcParams);
+                var buffer = Reflection.BeginSendClientRPC(shotgun, SET_SAFETY_CLIENT_RPC, rpcParams, RpcDelivery.Reliable);
+                buffer.WriteValueSafe(safetyOn);
+                Reflection.EndSendClientRPC(shotgun, ref buffer, SET_SAFETY_CLIENT_RPC, rpcParams, RpcDelivery.Reliable);
+            }
+        }
+
+        static void RPCHandlerSetSafetyServer(NetworkBehaviour target, FastBufferReader reader, __RpcParams parameters)
+        {
+            var networkManager = target.NetworkManager;
+            if (networkManager is null || !networkManager.IsListening)
+                return;
+            reader.ReadValue(out bool safetyOn);
+            SetSafetyClientRpc((ShotgunItem)target, safetyOn);
+        }
+
+        static void RPCHandlerSetSafetyClient(NetworkBehaviour target, FastBufferReader reader, __RpcParams parameters)
+        {
+            var networkManager = target.NetworkManager;
+            if (networkManager is null || !networkManager.IsListening)
+                return;
+            reader.ReadValue(out bool safetyOn);
+            SetSafety((ShotgunItem)target, safetyOn);
+        }
+
+        static void SetSafety(ShotgunItem shotgun, bool safetyOn)
+        {
+            shotgun.safetyOn = safetyOn;
+            m_ShotgunItem_SetSafetyControlTip.Invoke(shotgun, new object[0]);
+        }
+
+        const uint SYNCHRONIZE_CLIENT_RPC = 393;
+        const uint SYNCHRONIZE_SERVER_RPC = 394;
+
+        public static void SynchronizeServerRpc(ShotgunItem shotgun)
+        {
+            if (!shotgun.IsOwner || shotgun.IsHost || shotgun.IsServer)
+                return;
+
+            var networkManager = shotgun.NetworkManager;
+            if (networkManager is null || !networkManager.IsListening)
+                return;
+
+            if (shotgun.IsHost || shotgun.IsServer)
+            {
+                SynchronizeClientRpc(shotgun);
+                return;
+            }
+
+            if (shotgun.IsClient)
+            {
+                var rpcParams = default(ServerRpcParams);
+                var buffer = Reflection.BeginSendServerRPC(shotgun, SYNCHRONIZE_SERVER_RPC, rpcParams, RpcDelivery.Reliable);
+                Reflection.EndSendServerRPC(shotgun, ref buffer, SYNCHRONIZE_SERVER_RPC, rpcParams, RpcDelivery.Reliable);
+            }
+        }
+
+        public static void SynchronizeClientRpc(ShotgunItem shotgun)
+        {
+            if (!shotgun.IsHost && !shotgun.IsServer)
+                return;
+
+            var networkManager = shotgun.NetworkManager;
+            if (networkManager is null || !networkManager.IsListening)
+                return;
+
+            if (shotgun.IsHost || shotgun.IsServer)
+            {
+                var rpcParams = default(ClientRpcParams);
+                var buffer = Reflection.BeginSendClientRPC(shotgun, SYNCHRONIZE_CLIENT_RPC, rpcParams, RpcDelivery.Reliable);
+                buffer.WriteValueSafe(shotgun.shellsLoaded);
+                buffer.WriteValueSafe(shotgun.safetyOn);
+                Reflection.EndSendClientRPC(shotgun, ref buffer, SYNCHRONIZE_CLIENT_RPC, rpcParams, RpcDelivery.Reliable);
+            }
+        }
+
+        static void RPCHandlerSynchronizeServer(NetworkBehaviour target, FastBufferReader reader, __RpcParams parameters)
+        {
+            var networkManager = target.NetworkManager;
+            if (networkManager is null || !networkManager.IsListening)
+                return;
+            SynchronizeClientRpc((ShotgunItem)target);
+        }
+
+        static void RPCHandlerSynchronizeClient(NetworkBehaviour target, FastBufferReader reader, __RpcParams parameters)
+        {
+            var networkManager = target.NetworkManager;
+            if (networkManager is null || !networkManager.IsListening)
+                return;
+            reader.ReadValue(out int shellsLoaded);
+            reader.ReadValue(out bool safetyOn);
+            Synchronize((ShotgunItem)target, shellsLoaded, safetyOn);
+        }
+
+        static void Synchronize(ShotgunItem shotgun, int shellsLoaded, bool safetyOn)
+        {
+            shotgun.shellsLoaded = shellsLoaded;
+            shotgun.shotgunShellLeft.enabled = shellsLoaded >= 1;
+            shotgun.shotgunShellRight.enabled = shellsLoaded >= 2;
+            shotgun.safetyOn = safetyOn;
+            m_ShotgunItem_SetSafetyControlTip.Invoke(shotgun, new object[0]);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch("InitializeRPCS_ShotgunItem")]
+        static void InitializeRPCS_ShotgunItemPostfix()
+        {
+            NetworkManager.__rpc_func_table.Add(SET_SAFETY_SERVER_RPC, RPCHandlerSetSafetyServer);
+            NetworkManager.__rpc_func_table.Add(SET_SAFETY_CLIENT_RPC, RPCHandlerSetSafetyClient);
+
+            NetworkManager.__rpc_func_table.Add(SYNCHRONIZE_SERVER_RPC, RPCHandlerSynchronizeServer);
+            NetworkManager.__rpc_func_table.Add(SYNCHRONIZE_CLIENT_RPC, RPCHandlerSynchronizeClient);
         }
     }
 }

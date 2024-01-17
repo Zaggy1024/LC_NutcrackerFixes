@@ -81,6 +81,7 @@
     <Compile Include="Patches\PatchNutcrackerEnemyAI.cs" />
     <Compile Include="Patches\PatchSandSpiderAI.cs" />
     <Compile Include="Patches\PatchShotgunItem.cs" />
+    <Compile Include="Patches\Reflection.cs" />
     <Compile Include="Plugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

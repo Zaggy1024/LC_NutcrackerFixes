@@ -1,4 +1,5 @@
 ﻿using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 
@@ -20,9 +21,17 @@ namespace NutcrackerFixes
         public static Plugin Instance { get; private set; }
         public new ManualLogSource Logger => base.Logger;
 
+        public static ConfigEntry<bool> Shotgun_SynchronizeShellsAndSafety;
+
         void Awake()
         {
             Instance = this;
+
+            Shotgun_SynchronizeShellsAndSafety = Config.Bind("Shotgun", "SynchronizeShellsAndSafety", true,
+                "Synchronize the shotgun shell count and safety setting upon picking up the shotgun. " +
+                "This feature must be installed and enabled for everyone, or the safety will not function as expected. " +
+                "Fixes an issue where too many items on the ship would cause the number of loaded shells as well as the safety " +
+                "to be desynced between the server and clients.");
 
             harmony.PatchAll(typeof(PatchNutcrackerEnemyAI));
             harmony.PatchAll(typeof(PatchShotgunItem));
