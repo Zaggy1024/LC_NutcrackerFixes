@@ -18,6 +18,8 @@ namespace NutcrackerFixes.Patches
             Start = start;
             End = end;
         }
+
+        public int Size { get => End - Start; }
     }
 
     public static class Common
