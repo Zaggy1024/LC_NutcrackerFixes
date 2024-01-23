@@ -1,6 +1,6 @@
 {
     "name": "NutcrackerFixes",
-    "version_number": "1.2.1",
+    "version_number": "1.2.2",
     "website_url": "https://github.com/Zaggy1024/LC_NutcrackerFixes/",
     "description": "Lethal Company mod that patches components for the Nutcracker and Shotgun item to reduce lag spikes and non-registering shots.",
     "dependencies": [

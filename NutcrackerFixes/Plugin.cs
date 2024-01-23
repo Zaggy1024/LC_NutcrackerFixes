@@ -12,7 +12,7 @@ namespace NutcrackerFixes
     {
         private const string MOD_NAME = "NutcrackerFixes";
         private const string MOD_UNIQUE_NAME = "Zaggy1024." + MOD_NAME;
-        private const string MOD_VERSION = "1.2.1";
+        private const string MOD_VERSION = "1.2.2";
 
         private readonly Harmony harmony = new Harmony(MOD_UNIQUE_NAME);
 
