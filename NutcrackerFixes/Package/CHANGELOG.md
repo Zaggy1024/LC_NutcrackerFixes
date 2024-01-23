@@ -1,3 +1,6 @@
+## Version 1.1.1
+- Removed some leftover debug code.
+
 ## Version 1.1.0
 - Added an opt-out feature to help ensure that shotguns stay synchronized.
     - When a client picks up a shotgun, the number of shells loaded as well as the current safety setting will be synchronized. This prevents an issue where having too many items on the ship would cause the safety and shell count to be desynced.
