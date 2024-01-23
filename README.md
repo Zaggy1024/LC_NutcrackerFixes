@@ -10,3 +10,4 @@ Lethal Company mod that patches the Nutcracker and Shotgun item to reduce the oc
     - To avoid unnecessary work when shooting nearby to blobs or any other enemies with multiple colliders, the hit registration will ensure that it only applies a hit to an enemy once. This should have no effect on damage dealt to enemies that actually receive damage from the Shotgun.
 - Removed some debug logging from the Nutcracker which would be spammed constantly from the Update() function.
 - Prevented NullReferenceExceptions when a Nutcrackers shoot Blobs or Spiders. Both AI scripts assumed that only players could hit them, which would cause a long stutter when a Nutcracker hits either enemy.
+- An optional opt-out feature aims to prevent desync of the number of shells loaded into shotguns as well as their safety setting. Without this enabled, having more than 250 items on the ship will usually cause shotguns to spawn on clients with the safety off and only one shell chambered.
